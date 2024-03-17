@@ -1,5 +1,7 @@
 {{ config(
         alias = 'pool_settings_latest',
+        schema = 'sudoswap_ethereum',
+        
         materialized = 'incremental',
         file_format = 'delta',
         incremental_strategy = 'merge',
@@ -12,9 +14,6 @@
 }}
 
 {% set project_start_date = '2022-04-23' %}
-{% set linear_bonding_address = '0x5b6ac51d9b1cede0068a1b26533cace807f883ee' %}
-{% set exponential_bonding_address = '0x432f962d8209781da23fb37b6b59ee15de7d9841' %}
-
 
 with
   latest_pool_fee as (
@@ -32,12 +31,11 @@ with
             INNER JOIN {{ source('ethereum','transactions') }} tx ON tx.block_time = evt.evt_block_time
             AND tx.hash = evt.evt_tx_hash
             {% if not is_incremental() %}
-            AND tx.block_time >= '{{project_start_date}}'
-            AND evt.evt_block_time >= '{{project_start_date}}'
-            {% endif %}
-            {% if is_incremental() %}
-            AND tx.block_time >= date_trunc("day", now() - interval '1 week')
-            AND evt.evt_block_time >= date_trunc("day", now() - interval '1 week')
+            AND tx.block_time >= TIMESTAMP '{{project_start_date}}'
+            AND evt.evt_block_time >= TIMESTAMP '{{project_start_date}}'
+            {% else %}
+            AND tx.block_time >= date_trunc('day', now() - interval '7' day)
+            AND evt.evt_block_time >= date_trunc('day', now() - interval '7' day)
             {% endif %}
         ) foo
     WHERE ordering = 1
@@ -58,12 +56,11 @@ with
             INNER JOIN {{ source('ethereum','transactions') }} tx ON tx.block_time = evt.evt_block_time
             AND tx.hash = evt.evt_tx_hash
             {% if not is_incremental() %}
-            AND tx.block_time >= '{{project_start_date}}'
-            AND evt.evt_block_time >= '{{project_start_date}}'
-            {% endif %}
-            {% if is_incremental() %}
-            AND tx.block_time >= date_trunc("day", now() - interval '1 week')
-            AND evt.evt_block_time >= date_trunc("day", now() - interval '1 week')
+            AND tx.block_time >= TIMESTAMP '{{project_start_date}}'
+            AND evt.evt_block_time >= TIMESTAMP '{{project_start_date}}'
+            {% else %}
+            AND tx.block_time >= date_trunc('day', now() - interval '7' day)
+            AND evt.evt_block_time >= date_trunc('day', now() - interval '7' day)
             {% endif %}
         ) foo
     WHERE ordering = 1
@@ -84,12 +81,11 @@ with
             INNER JOIN {{ source('ethereum','transactions') }} tx ON tx.block_time = evt.evt_block_time
             AND tx.hash = evt.evt_tx_hash
             {% if not is_incremental() %}
-            AND tx.block_time >= '{{project_start_date}}'
-            AND evt.evt_block_time >= '{{project_start_date}}'
-            {% endif %}
-            {% if is_incremental() %}
-            AND tx.block_time >= date_trunc("day", now() - interval '1 week')
-            AND evt.evt_block_time >= date_trunc("day", now() - interval '1 week')
+            AND tx.block_time >= TIMESTAMP '{{project_start_date}}'
+            AND evt.evt_block_time >= TIMESTAMP '{{project_start_date}}'
+            {% else %}
+            AND tx.block_time >= date_trunc('day', now() - interval '7' day)
+            AND evt.evt_block_time >= date_trunc('day', now() - interval '7' day)
             {% endif %}
         ) foo
     WHERE ordering = 1
@@ -109,21 +105,16 @@ with
 
 , initial_settings as (
     SELECT
-      output_pair AS pool_address,
-      CASE
-        WHEN _bondingCurve = '{{linear_bonding_address}}' THEN 'linear'
-        WHEN _bondingCurve = '{{exponential_bonding_address}}' THEN 'exponential'
-        ELSE 'other'
-      END as bonding_curve,
-      _spotPrice / 1e18 AS spot_price,
-      _delta / 1e18 as delta,
-      _fee AS pool_fee
-      ,call_block_time as creation_block_time
+      pool_address,
+      bonding_curve,
+      spot_price,
+      delta,
+      pool_fee,
+      creation_block_time
     FROM
-      {{ source('sudo_amm_ethereum','LSSVMPairFactory_call_createPairETH') }}
-    WHERE call_success
+      {{ ref('sudoswap_ethereum_pool_creations') }}
     {% if is_incremental() %}
-    AND call_block_time >= date_trunc("day", now() - interval '1 week')
+    WHERE creation_block_time >= date_trunc('day', now() - interval '7' day)
     {% endif %}
 )
 
@@ -155,7 +146,7 @@ with
 , full_settings_backfilled as (
     select
      coalesce(new.pool_address,old.pool_address) as pool_address
-    ,coalesce(old.bonding_curve) as bonding_curve
+    ,old.bonding_curve as bonding_curve
     ,coalesce(new.pool_fee,old.pool_fee) as pool_fee
     ,coalesce(new.delta, old.delta) as delta
     ,coalesce(new.spot_price,old.spot_price) as spot_price
@@ -165,7 +156,4 @@ with
     ON old.pool_address = new.pool_address
 )
 {% endif %}
-
-
 select * from full_settings_backfilled
-;

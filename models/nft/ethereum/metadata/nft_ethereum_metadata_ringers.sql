@@ -1,8 +1,7 @@
 {{ config(
-        alias = 'ringers',
-        partition_by = ['token_id'],
-        materialized = 'view',
-        unique_key = ['token_id']
+        tags = ['static']
+        ,schema = 'nft_ethereum_metadata'
+        ,alias = 'ringers'
         )
 }}
 

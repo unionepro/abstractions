@@ -1,5 +1,7 @@
 {{ config(
         alias = 'pool_creations',
+        schema = 'sudoswap_ethereum',
+        
         materialized = 'incremental',
         file_format = 'delta',
         incremental_strategy = 'merge',
@@ -14,17 +16,18 @@
 {% set project_start_date = '2022-04-23' %}
 {% set linear_bonding_address = '0x5b6ac51d9b1cede0068a1b26533cace807f883ee' %}
 {% set exponential_bonding_address = '0x432f962d8209781da23fb37b6b59ee15de7d9841' %}
-
+{% set xyk_bonding_address = '0x7942e264e21c5e6cbba45fe50785a15d3beb1da0' %}
 
 WITH
   pool_creations AS (
     SELECT
       output_pair AS pool_address,
       _nft AS nft_contract_address,
-      tx.from AS creator_address,
+      tx."from" AS creator_address,
       CASE
-        WHEN _bondingCurve = '{{linear_bonding_address}}' THEN 'linear'
-        WHEN _bondingCurve = '{{exponential_bonding_address}}' THEN 'exponential'
+        WHEN _bondingCurve = {{linear_bonding_address}} THEN 'linear'
+        WHEN _bondingCurve = {{exponential_bonding_address}} THEN 'exponential'
+        WHEN _bondingCurve = {{xyk_bonding_address}} THEN 'xyk'
         ELSE 'other'
       END as bonding_curve,
       CASE
@@ -45,14 +48,12 @@ WITH
       INNER JOIN {{ source('ethereum','transactions') }} tx ON tx.block_time = cre.call_block_time
         AND tx.hash = cre.call_tx_hash
         {% if not is_incremental() %}
-        AND tx.block_time >= '{{project_start_date}}'
-        {% endif %}
-        {% if is_incremental() %}
-        AND tx.block_time >= date_trunc("day", now() - interval '1 week')
+        AND tx.block_time >= TIMESTAMP '{{project_start_date}}'
+        {% else %}
+        AND tx.block_time >= date_trunc('day', now() - interval '7' day)
         {% endif %}
     WHERE
       call_success
   )
 
 SELECT * FROM pool_creations
-;
